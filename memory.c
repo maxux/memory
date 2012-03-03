@@ -12,14 +12,14 @@
 #define COLOR_RESET	"\033[0m"
 
 /* Struct */
-struct process_stat_t {
+typedef struct process_stat_t {
 	char name[256];
 	int pid;
 	size_t memory;
 	
 	struct process_stat_t *next;
 	
-} typedef process_stat_t;
+} process_stat_t;
 
 /* Prototypes */
 int isnum(char *val);
@@ -106,7 +106,7 @@ void GetMemoryOfPid(char *pid, process_stat_t *data) {
 	data->next = NULL;
 	
 	/* Init Path */
-	snprintf(path, sizeof(path), "/proc/%s/status", pid);
+	sprintf(path, "/proc/%s/status", pid);
 	
 	fp = fopen(path, "r");
 	if(fp == NULL) {
@@ -131,7 +131,7 @@ void GetMemoryOfPid(char *pid, process_stat_t *data) {
 	fclose(fp);
 }
 
-int main(int argc, const char *argv[]) {
+int main() {
 	DIR *fold;
 	struct dirent *content;
 	process_stat_t **head, *data, *new_elem;
