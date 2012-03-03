@@ -47,6 +47,11 @@ void TrimLf(char *str) {
 	}
 }
 
+void diep(char *s) {
+	perror(s);
+	exit(1);
+}
+
 void PrintColorSize(size_t memory) {
 	if(memory > 102400)			/* 100 Mo	*/
 		printf("%s", COLOR_RED);
@@ -142,6 +147,9 @@ int main(int argc, const char *argv[]) {
 	while((content = readdir(fold)) != NULL) {
 		if(isnum(content->d_name)) {
 			new_elem = (process_stat_t *) malloc(sizeof(process_stat_t));
+			if(!new_elem)
+				diep("malloc");
+
 			GetMemoryOfPid(content->d_name, new_elem);
 			Insert(head, new_elem);
 		}
