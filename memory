@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+import os
+
+class Process():
+    def __init__(self, pid):
+        self.pid = int(pid)
+        self.name = ""
+        self.memory = 0
+        self.kernel = False
+        
+    def setName(self, name):
+        self.name = name
+
+    def setMemoryUsage(self, vmrss):
+        self.memory = int(vmrss)
+    
+    def getPid(self):
+        return self.pid
+
+    def getName(self):
+        return self.name
+    
+    def getMemory(self):
+        if self.memory > (1024 * 1024 * 1024):
+            return '%.2f GiB' % (self.memory / 1024 / 1024 / 1024)
+        
+        return '%.2f MiB' % (self.memory / 1024 / 1024)
+    
+    def isKernel(self):
+        return (self.memory == 0)
+    
+    def __repr__(self):
+        return "pid(%d)" % self.pid
+
+
+
+class MemoryUsage():
+    def __init__(self):
+        self.process = []
+        self.load()
+        self.parse()
+        
+        self.total = self.getTotalMemory()
+    
+    def load(self):
+        dirs = os.listdir('/proc/')        
+        
+        for dir in dirs:
+            if(dir.isdigit()):
+                # dir is a pid, adding it
+                process = Process(dir)
+                self.process.append(process)
+
+    def parse(self):
+        #
+        # reading name and memory usage
+        #
+        for process in self.process:
+            with open("/proc/%s/status" % process.getPid()) as f:
+                content = f.readlines()
+            
+            for line in content:
+                temp = line.split("\t")
+                key = temp[0].strip()
+                
+                if key == "Name:":
+                    process.setName(temp[1].strip())
+                
+                if key == "VmRSS:":
+                    value = temp[1].strip().partition(' ')
+                    process.setMemoryUsage(int(value[0]) * 1024) # saving in bytes
+    
+        #
+        # ordering list
+        #
+        self.process.sort(key=lambda x: x.memory)
+    
+    def getTotalMemory(self):
+        with open("/proc/meminfo") as f:
+            content = f.readlines()
+        
+        for line in content:
+            temp = line.split(' ')
+            
+            if temp[0] == "MemTotal:":
+                return int(temp[-2]) * 1024
+            
+        return 0
+    
+    def getPercent(self, memory):
+        return (memory / self.total) * 100
+        
+    def dump(self):
+        print(" PID    | Name                        | VmRSS");
+        print("--------+-----------------------------+-----------------");
+    
+        for p in self.process:
+            if p.isKernel():
+                continue
+
+            print(" %-6d | %-27s | %s (%.1f%%)" % (p.getPid(), p.getName(), p.getMemory(), self.getPercent(p.memory)))
+
+        print("--------+-----------------------------+-----------------");
+        print(" PID    | Name                        | VmRSS");
+
+
+
+if __name__ == "__main__":
+    memory = MemoryUsage()
+    memory.dump()
