@@ -136,11 +136,11 @@ class MemoryUsage():
         with open(csvdb, 'a', newline='') as f:
            writer = csv.writer(f, dialect='excel')
            if not file_exists:
-               writer.writerow(['Timestamp', 'PID', 'Name'] + self.values)
+               writer.writerow(['Timestamp', 'PID', 'Name', 'Tag'] + self.values)
            for p in self.process:
                if p.isKernel():
                    continue
-               writer.writerow([int(time.time()), p.getPid(), p.getName()] + [p.getMemoryInBytes(key) for key in self.values])
+               writer.writerow([int(time.time()), p.getPid(), p.getName(), p.getTag()] + [p.getMemoryInBytes(key) for key in self.values])
 
 
 
