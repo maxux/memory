@@ -1,54 +1,82 @@
 #!/usr/bin/env python3
 import os
+import argparse
+import re
+import csv
+import time
 
 class Process():
     def __init__(self, pid):
         self.pid = int(pid)
         self.name = ""
-        self.memory = 0
+        self.memory = dict()
         self.kernel = False
+        self.tag = ""
         
     def setName(self, name):
         self.name = name
 
-    def setMemoryUsage(self, vmrss):
-        self.memory = int(vmrss)
-    
+    def setMemoryUsage(self, key, value):
+        self.memory[key] = int(value)
+
+    def setTag(self, tag):
+        self.tag = tag
+
+    def getTag(self):
+        return self.tag
+
     def getPid(self):
         return self.pid
 
     def getName(self):
         return self.name
     
-    def getMemory(self):
-        if self.memory > (1024 * 1024 * 1024):
-            return '%.2f GiB' % (self.memory / 1024 / 1024 / 1024)
+    def getMemory(self, key):
+        if self.memory[key] > (1024 * 1024 * 1024):
+            return '%.2f GiB' % (self.memory[key] / 1024 / 1024 / 1024)
         
-        return '%.2f MiB' % (self.memory / 1024 / 1024)
+        return '%.2f MiB' % (self.memory[key] / 1024 / 1024)
+
+    def getMemoryInBytes(self, key):
+        return self.memory[key]
     
     def isKernel(self):
         return (self.memory == 0)
-    
+
     def __repr__(self):
-        return "pid(%d)" % self.pid
+        return "%spid(%d)" % (self.tag + ": " if self.tag else "", self.pid)
 
 
 
 class MemoryUsage():
-    def __init__(self):
+
+    def __init__(self, cmdfilter=None, values=['VmRSS']):
+        self.regex = re.compile(cmdfilter) if cmdfilter else None
+        self.values = values
         self.process = []
         self.load()
         self.parse()
         
         self.total = self.getTotalMemory()
+
     
     def load(self):
-        dirs = os.listdir('/proc/')        
+        pids = os.listdir('/proc/')        
         
-        for dir in dirs:
-            if(dir.isdigit()):
+        for pid in pids:
+            if(pid.isdigit()):
                 # dir is a pid, adding it
-                process = Process(dir)
+                tag = ""
+                if self.regex:
+                    with open("/proc/%s/cmdline" % pid, "r") as f:
+                        m = self.regex.match(f.read())
+                        if not m:
+                            continue
+                        if m.groups():
+                            tag = m.group(1)
+                process = Process(pid)
+                if tag:
+                    process.setTag(tag)
                 self.process.append(process)
 
     def parse(self):
@@ -61,19 +89,15 @@ class MemoryUsage():
             
             for line in content:
                 temp = line.split("\t")
-                key = temp[0].strip()
+                key = temp[0].strip()[:-1]
                 
-                if key == "Name:":
+                if key == "Name":
                     process.setName(temp[1].strip())
                 
-                if key == "VmRSS:":
+                if key in self.values:
                     value = temp[1].strip().partition(' ')
-                    process.setMemoryUsage(int(value[0]) * 1024) # saving in bytes
+                    process.setMemoryUsage(key, int(value[0]) * 1024) # saving in bytes
     
-        #
-        # ordering list
-        #
-        self.process.sort(key=lambda x: x.memory)
     
     def getTotalMemory(self):
         with open("/proc/meminfo") as f:
@@ -91,20 +115,43 @@ class MemoryUsage():
         return (memory / self.total) * 100
         
     def dump(self):
-        print(" PID    | Name                        | VmRSS");
-        print("--------+-----------------------------+-----------------");
+        self.process.sort(key=lambda x: sum(x.memory.values()))
+
+        print(" PID    | Name                        | %s" % ("| ".join(("%-18s" % val for val in self.values))));
+        print("--------+-----------------------------+-%s" % ("|-".join(("------------------" for _ in self.values))));
     
         for p in self.process:
             if p.isKernel():
                 continue
 
-            print(" %-6d | %-27s | %s (%.1f%%)" % (p.getPid(), p.getName(), p.getMemory(), self.getPercent(p.memory)))
+            print(" %-6d | %-27s | %s" % (p.getPid(), p.getName() + (" (%s)" % p.getTag() if p.getTag() else ""), "| ".join(("%-18s" % ("%s (%.1f%%)" % (p.getMemory(val), self.getPercent(p.getMemoryInBytes(val)))) for val in self.values))))
 
-        print("--------+-----------------------------+-----------------");
-        print(" PID    | Name                        | VmRSS");
+        print("--------+-----------------------------+-%s" % ("|-".join(("------------------" for _ in self.values))));
+        print(" PID    | Name                        | %s" % ("| ".join(("%-18s" % val for val in self.values))));
+
+    def dumpcsv(self, csvdb):
+        self.process.sort(key=lambda x: "%s%s" % (x.getName(), x.getTag()))
+
+        file_exists = os.path.exists(csvdb)
+        with open(csvdb, 'a', newline='') as f:
+           writer = csv.writer(f, dialect='excel')
+           if not file_exists:
+               writer.writerow(['Timestamp', 'PID', 'Name'] + self.values)
+           for p in self.process:
+               if p.isKernel():
+                   continue
+               writer.writerow([int(time.time()), p.getPid(), p.getName()] + [p.getMemoryInBytes(key) for key in self.values])
 
 
 
 if __name__ == "__main__":
-    memory = MemoryUsage()
-    memory.dump()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cmdfilter", help="Regex to filter certain processes. The first group in the filter will be added to the output.")
+    parser.add_argument("--values", help="Which memory values that need to be listed", nargs="*", default=['VmRSS'])
+    parser.add_argument("--csvdb", help="Will append to csv file specified")
+    args = parser.parse_args()
+    memory = MemoryUsage(cmdfilter=args.cmdfilter, values=args.values)
+    if args.csvdb:
+        memory.dumpcsv(args.csvdb)
+    else:
+        memory.dump()
