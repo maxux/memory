@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
 #include <dirent.h>
 #include <string.h>
 
@@ -11,166 +10,130 @@
 #define COLOR_GREEN_N  "\033[0;32m"
 #define COLOR_RESET    "\033[0m"
 
-typedef struct process_stat_t {
-    char name[256];
+typedef struct ps_t {
     int pid;
+    char *name;
     size_t memory;
 
-    struct process_stat_t *next;
+} ps_t;
 
-} process_stat_t;
+static void diep(char *s) {
+    perror(s);
+    exit(EXIT_FAILURE);
+}
 
-/* Prototypes */
-int isnum(char *val);
-void TrimLf(char *str);
-void Insert(process_stat_t **head, process_stat_t *data);
-void GetMemoryOfPid(char *pid, process_stat_t *data);
-
-
-/* Useful Functions */
-int isnum(char *val) {
+static int isnum(char *val) {
     while(*val && *val >= '0' && *val <= '9')
         val++;
 
     return (*val == '\0');
 }
 
-void TrimLf(char *str) {
-    int len;
+static char *colorsize(size_t memory) {
+    if(memory > 100 * 1024) // 100 MB
+        return COLOR_RED;
 
-    len = strlen(str) - 1;
+    else if(memory > 60 * 1024) // 60 MB
+        return COLOR_YELLOW;
 
-    while(*(str+len) == '\n') {
-        *(str+len) = '\0';
-        len--;
-    }
-}
-
-void diep(char *s) {
-    perror(s);
-    exit(1);
-}
-
-void PrintColorSize(size_t memory) {
-    if(memory > 102400)            /* 100 MB    */
-        printf("%s", COLOR_RED);
-
-    else if(memory > 61440)            /* 60 MB    */
-        printf("%s", COLOR_YELLOW);
-
-    else if(memory > 20480)            /* 20 MB    */
-        printf("%s", COLOR_BLUE);
+    else if(memory > 20 * 1024) // 20 MB
+        return COLOR_BLUE;
 
     else if(memory > 0)
-        printf("%s", COLOR_GREEN);
+        return COLOR_GREEN;
 
-    else
-        printf("%s", COLOR_GREEN_N);
+    return COLOR_GREEN_N;
 }
 
-void Insert(process_stat_t **head, process_stat_t *data) {
-    process_stat_t *use, *prev;
-
-    /* Check if empty */
-    if(*head == NULL) {
-        *head = data;
-        return;
-    }
-
-    /* Check if First */
-    if((*head)->memory >= data->memory) {
-        data->next = *head;
-        *head = data;
-        return;
-    }
-
-    use = *head;
-    prev = *head;
-
-    while(use != NULL && use->memory < data->memory) {
-        prev = use;
-        use = use->next;
-    }
-
-    prev->next = data;
-    data->next = use;
+static int pscmp(const void *a, const void *b) {
+    return (((ps_t *) a)->memory - ((ps_t *) b)->memory);
 }
 
-/* Working */
-void GetMemoryOfPid(char *pid, process_stat_t *data) {
+static ps_t pidmem(char *pid) {
     FILE *fp;
     char path[128], buffer[512];
+    ps_t data;
 
-    /* Init Data */
-    data->next = NULL;
-
-    /* Init Path */
     sprintf(path, "/proc/%s/status", pid);
 
-    fp = fopen(path, "r");
-    if(fp == NULL) {
-        perror("fopen");
-        return;
-    }
+    if(!(fp = fopen(path, "r")))
+        diep(path);
+
+    data.memory = 0;
+    data.pid = 0;
 
     while(fgets(buffer, sizeof(buffer), fp) != NULL) {
-        TrimLf(buffer);
-
         if(strncmp(buffer, "Name:", 5) == 0) {
-            strncpy(data->name, buffer+6, sizeof(data->name));
-            data->name[strlen(buffer+6)] = '\0';
+            if(!(data.name = strdup(buffer + 6)))
+                diep("strdup");
+
+            data.name[strlen(data.name) - 1] = '\0';
 
         } else if(strncmp(buffer, "Pid:", 4) == 0)
-            data->pid = atoi(buffer+5);
+            data.pid = atoi(buffer + 5);
 
         else if(strncmp(buffer, "VmRSS:", 6) == 0)
-            data->memory = atoi(buffer+7);
+            data.memory = atoi(buffer + 7);
     }
 
     fclose(fp);
+
+    return data;
 }
 
 int main() {
-    DIR *fold;
+    DIR *dir;
     struct dirent *content;
-    process_stat_t **head, *data, *new_elem;
+    size_t elements = 0;
+    ps_t *pslist = NULL;
 
-    data = NULL;
-    head = &data;
+    if(!(dir = opendir("/proc")))
+        diep("/proc");
 
-    if((fold = opendir("/proc")) == NULL) {
-        printf("Cannot read /proc\n");
-        exit(EXIT_FAILURE);
+    // read amount of entries
+    while((content = readdir(dir)) != NULL)
+        elements += 1;
+
+    rewinddir(dir);
+
+    // allocates entries
+    if(!(pslist = calloc(elements, sizeof(ps_t))))
+        diep("calloc");
+
+    // fetch entries
+    size_t index = 0;
+
+    while((content = readdir(dir)) != NULL) {
+        if(!isnum(content->d_name))
+            continue;
+
+        pslist[index] = pidmem(content->d_name);
+        index += 1;
     }
 
-    while((content = readdir(fold)) != NULL) {
-        if(isnum(content->d_name)) {
-            new_elem = (process_stat_t *) malloc(sizeof(process_stat_t));
-            if(!new_elem)
-                diep("malloc");
+    closedir(dir);
 
-            GetMemoryOfPid(content->d_name, new_elem);
-            Insert(head, new_elem);
-        }
-    }
+    // sorting list
+    qsort(pslist, index, sizeof(ps_t), pscmp);
 
-    closedir(fold);
-
-    /* Listing List */
+    // listing processes
     printf(" PID    | Name                        | VmRSS\n");
     printf("--------+-----------------------------+-----------------\n");
-    data = *head;
 
-    while(data != NULL) {
-        PrintColorSize(data->memory);
+    for(size_t i = 0; pslist[i].name; i++) {
+        ps_t *data = &pslist[i];
 
-        printf(" %-6d | %-27s | %.3f MB %s\n", data->pid, data->name, (float) data->memory / 1024, COLOR_RESET);
+        // skip kernel threads
+        if(data->memory < 1)
+            continue;
 
-        new_elem = data->next;
-        free(data);
-        data = new_elem;
+        char *color = colorsize(data->memory);
+        float memsize = data->memory / 1024.0;
+
+        printf("%s %-6d | %-27s | %.3f MB\n", color, data->pid, data->name, memsize);
     }
 
+    printf("%s", COLOR_RESET);
     printf("--------+-----------------------------+-----------------\n");
     printf(" PID    | Name                        | VmRSS\n");
 
