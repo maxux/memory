@@ -1,15 +1,18 @@
-include config.mk
+EXEC = memory
+
+CFLAGS  = -W -Wall -O2
+LDFLAGS = 
+CC = cc
 
 SRC=$(wildcard *.c)
 OBJ=$(SRC:.c=.o)
 
-all: options $(EXEC)
+all: $(EXEC)
 
-options: config.mk
-	@echo $(EXEC) build options:
-	@echo "CFLAGS   = $(CFLAGS)"
-	@echo "LDFLAGS  = $(LDFLAGS)"
-	@echo "CC       = $(CC)"
+static: CFLAGS += -march=x86-64
+static: LDFLAGS += -static
+static: CC = x86_64-pc-linux-musl-gcc
+static: clean $(EXEC)
 
 $(EXEC): $(OBJ)
 	$(CC) -o $@ $^ $(LDFLAGS)
