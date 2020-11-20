@@ -53,15 +53,10 @@ static int pscmp(const void *a, const void *b) {
 static char *cmdtrunc(char *cmdline) {
     size_t len = strlen(cmdline);
 
-    if(len < 33)
+    if(len < 40)
         return cmdline;
 
-    strcpy(cmdline + 31, "...");
-
-    if(len < 34)
-        return cmdline;
-
-    strcpy(cmdline + 34, cmdline + len - 6);
+    strcpy(cmdline + 37, "...");
 
     return cmdline;
 }
