@@ -14,6 +14,7 @@ typedef struct ps_t {
     int pid;
     char *name;
     size_t memory;
+    char *cmdline;
 
 } ps_t;
 
@@ -49,6 +50,39 @@ static int pscmp(const void *a, const void *b) {
     return (((ps_t *) a)->memory - ((ps_t *) b)->memory);
 }
 
+static char *cmdtrunc(char *cmdline) {
+    size_t len = strlen(cmdline);
+
+    if(len < 33)
+        return cmdline;
+
+    strcpy(cmdline + 31, "...");
+
+    if(len < 34)
+        return cmdline;
+
+    strcpy(cmdline + 34, cmdline + len - 6);
+
+    return cmdline;
+}
+
+static ps_t *pidcmd(char *pid, ps_t *data) {
+    FILE *fp;
+    char path[128], buffer[512];
+
+    sprintf(path, "/proc/%s/cmdline", pid);
+
+    if(!(fp = fopen(path, "r")))
+        diep(path);
+
+    if(fgets(buffer, sizeof(buffer), fp) != NULL)
+        data->cmdline = strdup(buffer);
+
+    fclose(fp);
+
+    return data;
+}
+
 static ps_t pidmem(char *pid) {
     FILE *fp;
     char path[128], buffer[512];
@@ -59,6 +93,7 @@ static ps_t pidmem(char *pid) {
     if(!(fp = fopen(path, "r")))
         diep(path);
 
+    data.cmdline = NULL;
     data.memory = 0;
     data.pid = 0;
 
@@ -77,6 +112,9 @@ static ps_t pidmem(char *pid) {
     }
 
     fclose(fp);
+
+    // fetch cmdline if available
+    pidcmd(pid, &data);
 
     return data;
 }
@@ -130,7 +168,7 @@ int main() {
         char *color = colorsize(data->memory);
         float memsize = data->memory / 1024.0;
 
-        printf("%s %-6d | %-27s | %.3f MB\n", color, data->pid, data->name, memsize);
+        printf("%s %-6d | %-40s | %.3f MB\n", color, data->pid, cmdtrunc(data->cmdline), memsize);
     }
 
     printf("%s", COLOR_RESET);
