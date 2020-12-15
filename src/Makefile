@@ -1,6 +1,6 @@
 EXEC = memory
 
-CFLAGS  = -W -Wall -O2
+CFLAGS  = -W -Wall -O2 -g
 LDFLAGS = 
 CC = cc
 

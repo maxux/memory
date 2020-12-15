@@ -68,7 +68,7 @@ static ps_t *pidcmd(char *pid, ps_t *data) {
     sprintf(path, "/proc/%s/cmdline", pid);
 
     if(!(fp = fopen(path, "r")))
-        diep(path);
+        return NULL;
 
     if(fgets(buffer, sizeof(buffer), fp) != NULL)
         data->cmdline = strdup(buffer);
@@ -81,16 +81,16 @@ static ps_t *pidcmd(char *pid, ps_t *data) {
 static ps_t pidmem(char *pid) {
     FILE *fp;
     char path[128], buffer[512];
-    ps_t data;
+    ps_t data = {
+        .cmdline = NULL,
+        .memory = 0,
+        .pid = 0
+    };
 
     sprintf(path, "/proc/%s/status", pid);
 
     if(!(fp = fopen(path, "r")))
-        diep(path);
-
-    data.cmdline = NULL;
-    data.memory = 0;
-    data.pid = 0;
+        return data;
 
     while(fgets(buffer, sizeof(buffer), fp) != NULL) {
         if(strncmp(buffer, "Name:", 5) == 0) {
@@ -153,7 +153,7 @@ int main() {
     printf(" PID    | Name                        | VmRSS\n");
     printf("--------+-----------------------------+-----------------\n");
 
-    for(size_t i = 0; pslist[i].name; i++) {
+    for(size_t i = 0; i < elements; i++) {
         ps_t *data = &pslist[i];
 
         // skip kernel threads
